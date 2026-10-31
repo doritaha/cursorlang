@@ -10,7 +10,7 @@ case "$(uname -s)" in
   Darwin)
     python3 -m venv "$dir/venv"
     "$dir/venv/bin/pip" install --quiet pyobjc-framework-Cocoa
-    curl -fsSL "$base/mac/cursorlang.py" -o "$dir/cursorlang.py"
+    curl -fsSL "$base/v3/mac/cursorlang.py" -o "$dir/cursorlang.py"
     plist="$HOME/Library/LaunchAgents/com.cursorlang.plist"
     mkdir -p "$(dirname "$plist")"
     cat > "$plist" <<EOF
@@ -28,7 +28,7 @@ EOF
   Linux)
     python3 -c 'import tkinter' 2>/dev/null || { echo "Install tkinter first, e.g.: sudo apt install python3-tk x11-xkb-utils" >&2; exit 1; }
     command -v setxkbmap >/dev/null || { echo "Install setxkbmap first, e.g.: sudo apt install x11-xkb-utils" >&2; exit 1; }
-    curl -fsSL "$base/linux/cursorlang.py" -o "$dir/cursorlang.py"
+    curl -fsSL "$base/v3/linux/cursorlang.py" -o "$dir/cursorlang.py"
     mkdir -p "$HOME/.config/autostart"
     cat > "$HOME/.config/autostart/cursorlang.desktop" <<EOF
 [Desktop Entry]

@@ -99,11 +99,11 @@ These versions have not been tested on real systems yet and do not adapt their c
 
 | Path | Contents |
 |---|---|
-| `CursorLangSetup.exe` | Windows installer and uninstaller |
-| `install.sh` | macOS and Linux installer |
-| `install.ps1` | Windows install from source |
-| `windows/` | Windows source and build script |
-| `mac/` | macOS source |
-| `linux/` | Linux source |
+| `CursorLangSetup.exe` | Latest Windows installer and uninstaller |
+| `install.sh` | Latest macOS and Linux installer |
+| `install.ps1` | Latest Windows install from source |
+| `v3/` | Version 3: installer and `windows/`, `mac/`, `linux/` source |
+| `v2/` | Version 2: installer and source |
+| `v1/` | Version 1: standalone exe and source |
 
-To build on Windows, run `windows\build.bat`. No extra tools are needed.
+To build version 3 on Windows, run `v3\windows\build.bat`. No extra tools are needed.

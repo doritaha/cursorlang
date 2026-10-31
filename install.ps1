@@ -11,7 +11,7 @@ $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 New-Item -ItemType Directory -Force $dir | Out-Null
 Get-Process CursorLang -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Milliseconds 500
-Invoke-WebRequest -UseBasicParsing "$base/windows/CursorLang.cs" -OutFile $src
+Invoke-WebRequest -UseBasicParsing "$base/v3/windows/CursorLang.cs" -OutFile $src
 & $csc /nologo /codepage:65001 /target:winexe /optimize+ "/out:$exe" /r:System.Windows.Forms.dll /r:System.Drawing.dll $src
 if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
 
