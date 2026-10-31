@@ -73,7 +73,7 @@ If you keep typing in the wrong language, CursorLang is for you. It shows the ac
 
 ### Uninstall on Windows
 
-Go to **Settings > Apps > CursorLang** and choose **Uninstall**. Or right-click the icon near the clock and choose **حذف برنامه** (Remove).
+Go to **Settings > Apps > CursorLang** and choose **Uninstall**. Or right-click the icon near the clock and choose **Uninstall**.
 
 ### macOS and Linux (experimental)
 

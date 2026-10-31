@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -10,6 +11,37 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 using Microsoft.Win32;
+
+// UI text in the Windows display language, falling back to English.
+static class T
+{
+    public const int Autostart = 0, Uninstall = 1, Exit = 2, AlreadyRunning = 3, AskInstall = 4, Reinstall = 5, Installed = 6, InstallFailed = 7, AskRemove = 8, Removed = 9;
+
+    static readonly Dictionary<string, string[]> Texts = new Dictionary<string, string[]>
+    {
+        { "en", new[] { "Start with Windows", "Uninstall", "Exit", "CursorLang is already running. The language label is next to the mouse and its icon is near the clock.", "Install CursorLang?", "CursorLang is already installed.\n\nYes: Reinstall\nNo: Uninstall\nCancel: Do nothing", "Installed. The language label is next to the mouse.\nTo remove it: Settings > Apps > CursorLang", "Installation failed:", "Uninstall CursorLang?", "CursorLang was removed." } },
+        { "fa", new[] { "اجرا با شروع ویندوز", "حذف برنامه", "خروج", "برنامه از قبل در حال اجراست. برچسب زبان کنار موس است و آیکن آن کنار ساعت ویندوز قرار دارد.", "CursorLang نصب شود؟", "CursorLang قبلاً نصب شده است.\n\nYes: نصب دوباره\nNo: حذف برنامه\nCancel: انصراف", "نصب شد. برچسب زبان کنار موس است.\nبرای حذف: Settings > Apps > CursorLang", "نصب انجام نشد:", "CursorLang حذف شود؟", "برنامه حذف شد." } },
+        { "ar", new[] { "التشغيل مع بدء Windows", "إلغاء التثبيت", "خروج", "البرنامج قيد التشغيل بالفعل. تظهر علامة اللغة بجانب الماوس وأيقونته قرب الساعة.", "هل تريد تثبيت CursorLang؟", "CursorLang مثبت بالفعل.\n\nYes: إعادة التثبيت\nNo: إلغاء التثبيت\nCancel: إلغاء", "تم التثبيت. تظهر علامة اللغة بجانب الماوس.\nللإزالة: Settings > Apps > CursorLang", "فشل التثبيت:", "هل تريد إلغاء تثبيت CursorLang؟", "تمت إزالة البرنامج." } },
+        { "ru", new[] { "Запускать вместе с Windows", "Удалить", "Выход", "Программа уже запущена. Метка языка находится рядом с мышью, а значок — возле часов.", "Установить CursorLang?", "CursorLang уже установлен.\n\nYes: переустановить\nNo: удалить\nCancel: отмена", "Установлено. Метка языка находится рядом с мышью.\nУдаление: Settings > Apps > CursorLang", "Не удалось установить:", "Удалить CursorLang?", "Программа удалена." } },
+        { "zh", new[] { "随 Windows 启动", "卸载", "退出", "程序已在运行。语言标签显示在鼠标旁，图标位于时钟附近。", "要安装 CursorLang 吗？", "CursorLang 已安装。\n\nYes：重新安装\nNo：卸载\nCancel：取消", "安装完成。语言标签显示在鼠标旁。\n卸载方法：Settings > Apps > CursorLang", "安装失败：", "要卸载 CursorLang 吗？", "程序已卸载。" } },
+        { "ko", new[] { "Windows 시작 시 실행", "제거", "종료", "프로그램이 이미 실행 중입니다. 언어 표시는 마우스 옆에, 아이콘은 시계 옆에 있습니다.", "CursorLang을 설치할까요?", "CursorLang이 이미 설치되어 있습니다.\n\nYes: 다시 설치\nNo: 제거\nCancel: 취소", "설치되었습니다. 언어 표시는 마우스 옆에 있습니다.\n제거 방법: Settings > Apps > CursorLang", "설치 실패:", "CursorLang을 제거할까요?", "프로그램이 제거되었습니다." } },
+        { "ja", new[] { "Windows の起動時に実行", "アンインストール", "終了", "すでに実行中です。言語ラベルはマウスの横に、アイコンは時計の近くにあります。", "CursorLang をインストールしますか？", "CursorLang はすでにインストールされています。\n\nYes: 再インストール\nNo: アンインストール\nCancel: キャンセル", "インストールしました。言語ラベルはマウスの横にあります。\n削除方法: Settings > Apps > CursorLang", "インストールに失敗しました:", "CursorLang をアンインストールしますか？", "削除しました。" } },
+        { "de", new[] { "Mit Windows starten", "Deinstallieren", "Beenden", "Das Programm läuft bereits. Die Sprachanzeige ist neben der Maus, das Symbol neben der Uhr.", "CursorLang installieren?", "CursorLang ist bereits installiert.\n\nYes: Neu installieren\nNo: Deinstallieren\nCancel: Abbrechen", "Installiert. Die Sprachanzeige ist neben der Maus.\nEntfernen: Settings > Apps > CursorLang", "Installation fehlgeschlagen:", "CursorLang deinstallieren?", "Das Programm wurde entfernt." } },
+        { "fr", new[] { "Lancer au démarrage de Windows", "Désinstaller", "Quitter", "Le programme est déjà lancé. L'indicateur de langue est près de la souris et son icône près de l'horloge.", "Installer CursorLang ?", "CursorLang est déjà installé.\n\nYes : réinstaller\nNo : désinstaller\nCancel : annuler", "Installé. L'indicateur de langue est près de la souris.\nPour le supprimer : Settings > Apps > CursorLang", "Échec de l'installation :", "Désinstaller CursorLang ?", "Le programme a été supprimé." } },
+        { "es", new[] { "Iniciar con Windows", "Desinstalar", "Salir", "El programa ya se está ejecutando. La etiqueta de idioma está junto al ratón y el icono junto al reloj.", "¿Instalar CursorLang?", "CursorLang ya está instalado.\n\nYes: reinstalar\nNo: desinstalar\nCancel: cancelar", "Instalado. La etiqueta de idioma está junto al ratón.\nPara quitarlo: Settings > Apps > CursorLang", "Error de instalación:", "¿Desinstalar CursorLang?", "El programa se ha eliminado." } },
+        { "tr", new[] { "Windows ile başlat", "Kaldır", "Çıkış", "Program zaten çalışıyor. Dil etiketi farenin yanında, simgesi saatin yanındadır.", "CursorLang yüklensin mi?", "CursorLang zaten yüklü.\n\nYes: Yeniden yükle\nNo: Kaldır\nCancel: İptal", "Yüklendi. Dil etiketi farenin yanındadır.\nKaldırmak için: Settings > Apps > CursorLang", "Yükleme başarısız:", "CursorLang kaldırılsın mı?", "Program kaldırıldı." } },
+    };
+
+    static string Language { get { return CultureInfo.CurrentUICulture.TwoLetterISOLanguageName; } }
+
+    public static bool IsRightToLeft { get { return CultureInfo.CurrentUICulture.TextInfo.IsRightToLeft; } }
+
+    public static string Get(int id)
+    {
+        string[] texts;
+        return (Texts.TryGetValue(Language, out texts) ? texts : Texts["en"])[id];
+    }
+}
 
 // Shows the active keyboard language as a tiny label next to the mouse cursor.
 static class Program
@@ -36,7 +68,7 @@ static class Program
         {
             if (!isNew)
             {
-                MessageBox.Show("برنامه از قبل در حال اجراست. برچسب زبان کنار موس است و آیکن آن کنار ساعت ویندوز قرار دارد.", "CursorLang");
+                MessageBox.Show(T.Get(T.AlreadyRunning), "CursorLang");
                 return;
             }
             SetProcessDPIAware();
@@ -68,16 +100,16 @@ static class Setup
         {
             if (File.Exists(InstalledExe))
             {
-                DialogResult choice = MessageBox.Show("CursorLang قبلاً نصب شده است.\n\nYes: نصب دوباره\nNo: حذف برنامه\nCancel: انصراف", Title, MessageBoxButtons.YesNoCancel);
+                DialogResult choice = MessageBox.Show(T.Get(T.Reinstall), Title, MessageBoxButtons.YesNoCancel);
                 if (choice == DialogResult.Cancel) return;
                 if (choice == DialogResult.No)
                 {
                     Uninstall();
-                    MessageBox.Show("برنامه حذف شد.", Title);
+                    MessageBox.Show(T.Get(T.Removed), Title);
                     return;
                 }
             }
-            else if (MessageBox.Show("CursorLang نصب شود؟", Title, MessageBoxButtons.OKCancel) != DialogResult.OK) return;
+            else if (MessageBox.Show(T.Get(T.AskInstall), Title, MessageBoxButtons.OKCancel) != DialogResult.OK) return;
         }
 
         try
@@ -86,18 +118,18 @@ static class Setup
         }
         catch (Exception e)
         {
-            if (!quiet) MessageBox.Show("نصب انجام نشد:\n" + e.Message, Title);
+            if (!quiet) MessageBox.Show(T.Get(T.InstallFailed) + "\n" + e.Message, Title);
             Environment.ExitCode = 1;
             return;
         }
-        if (!quiet) MessageBox.Show("نصب شد. برچسب زبان کنار موس است.\nبرای حذف: Settings > Apps > CursorLang", Title);
+        if (!quiet) MessageBox.Show(T.Get(T.Installed), Title);
     }
 
     public static void RunUninstall(bool quiet)
     {
-        if (!quiet && MessageBox.Show("CursorLang حذف شود؟", Title, MessageBoxButtons.OKCancel) != DialogResult.OK) return;
+        if (!quiet && MessageBox.Show(T.Get(T.AskRemove), Title, MessageBoxButtons.OKCancel) != DialogResult.OK) return;
         Uninstall();
-        if (!quiet) MessageBox.Show("برنامه حذف شد.", Title);
+        if (!quiet) MessageBox.Show(T.Get(T.Removed), Title);
     }
 
     static void StopOtherCopies()
@@ -186,13 +218,13 @@ class Overlay : Form
         ReleaseDC(IntPtr.Zero, screen);
 
         ContextMenuStrip menu = new ContextMenuStrip();
-        menu.RightToLeft = RightToLeft.Yes;
-        ToolStripMenuItem autostart = new ToolStripMenuItem("اجرا با شروع ویندوز");
+        menu.RightToLeft = T.IsRightToLeft ? RightToLeft.Yes : RightToLeft.No;
+        ToolStripMenuItem autostart = new ToolStripMenuItem(T.Get(T.Autostart));
         autostart.Checked = IsAutostart();
         autostart.Click += delegate { SetAutostart(!autostart.Checked); autostart.Checked = IsAutostart(); };
         menu.Items.Add(autostart);
-        menu.Items.Add("حذف برنامه", null, delegate { Process.Start(Application.ExecutablePath, "--uninstall"); });
-        menu.Items.Add("خروج", null, delegate { Close(); });
+        menu.Items.Add(T.Get(T.Uninstall), null, delegate { Process.Start(Application.ExecutablePath, "--uninstall"); });
+        menu.Items.Add(T.Get(T.Exit), null, delegate { Close(); });
         tray.ContextMenuStrip = menu;
         tray.Text = "CursorLang";
 
