@@ -91,6 +91,7 @@ These versions have not been tested on real systems yet and do not adapt their c
 
 | Version | Changes | تغییرات |
 |---|---|---|
+| [4.0 (test)](https://github.com/doritaha/cursorlang/releases/tag/v4.0) | Fix selected text: Ctrl+Alt+Z for the wrong layout, Ctrl+Alt+F for Finglish | اصلاح متن انتخاب‌شده: Ctrl+Alt+Z برای زبان اشتباه، Ctrl+Alt+F برای فینگلیش |
 | [3.0](https://github.com/doritaha/cursorlang/releases/tag/v3.0) | More languages, menus in the Windows display language | زبان‌های بیشتر، منو به زبان ویندوز |
 | [2.0](https://github.com/doritaha/cursorlang/releases/tag/v2.0) | One-file installer and uninstaller | نصب و حذف با یک فایل |
 | [1.0](https://github.com/doritaha/cursorlang/releases/tag/v1.0) | Standalone exe with no installer | فایل اجرایی ساده بدون نصب |
@@ -102,6 +103,7 @@ These versions have not been tested on real systems yet and do not adapt their c
 | `CursorLangSetup.exe` | Latest Windows installer and uninstaller |
 | `install.sh` | Latest macOS and Linux installer |
 | `install.ps1` | Latest Windows install from source |
+| `v4/` | Version 4 (test): installer and Windows source |
 | `v3/` | Version 3: installer and `windows/`, `mac/`, `linux/` source |
 | `v2/` | Version 2: installer and source |
 | `v1/` | Version 1: standalone exe and source |
