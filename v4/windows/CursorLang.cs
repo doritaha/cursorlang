@@ -155,7 +155,7 @@ static class Setup
         using (RegistryKey key = Registry.CurrentUser.CreateSubKey(UninstallKey))
         {
             key.SetValue("DisplayName", "CursorLang");
-            key.SetValue("DisplayVersion", "4.0");
+            key.SetValue("DisplayVersion", "4.1");
             key.SetValue("DisplayIcon", InstalledExe);
             key.SetValue("InstallLocation", InstallDir);
             key.SetValue("UninstallString", "\"" + InstalledExe + "\" --uninstall");
@@ -325,7 +325,15 @@ class Overlay : Form
     readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
     readonly NotifyIcon tray = new NotifyIcon();
     readonly float scale;
-    IntPtr memDc, hBitmap, oldBitmap, trayIconHandle;
+    IntPtr memDc, hBitmap, trayIconHandle;
+    // A second label sits next to the text caret, with its own colors.
+    CaretLabel caretLabel;
+    IntPtr caretDc, caretBitmap;
+    Color caretFill = Color.White, caretChip = Color.Black;
+    Point caretPlaced;
+    bool caretShown;
+    volatile object caretRect;
+    static readonly int OwnProcessId = Process.GetCurrentProcess().Id;
     Size labelSize;
     string lang = "";
     Point lastPos = Point.Empty;
@@ -342,6 +350,7 @@ class Overlay : Form
 
         IntPtr screen = GetDC(IntPtr.Zero);
         memDc = CreateCompatibleDC(screen);
+        caretDc = CreateCompatibleDC(screen);
         ReleaseDC(IntPtr.Zero, screen);
 
         ContextMenuStrip menu = new ContextMenuStrip();
@@ -374,11 +383,17 @@ class Overlay : Form
     protected override void OnLoad(EventArgs e)
     {
         base.OnLoad(e);
+        caretLabel = new CaretLabel();
+        caretLabel.Show();
         UpdateLanguage();
+        Thread watcher = new Thread(WatchCaret);
+        watcher.IsBackground = true;
+        watcher.Start();
         tray.Visible = true;
         timer.Start();
         bool layout = RegisterHotKey(Handle, HotkeyLayout, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_Z);
         bool finglish = RegisterHotKey(Handle, HotkeyFinglish, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_F);
+        Log("registered layout=" + layout + " finglish=" + finglish);
         if (!layout) tray.ShowBalloonTip(5000, "CursorLang", "Ctrl+Alt+Z is used by another program.", ToolTipIcon.Warning);
         if (!finglish) tray.ShowBalloonTip(5000, "CursorLang", "Ctrl+Alt+F is used by another program.", ToolTipIcon.Warning);
     }
@@ -392,22 +407,26 @@ class Overlay : Form
     // Replaces the selection through the clipboard, then puts the user's clipboard back.
     void ConvertSelection(bool finglish)
     {
+        Log("hotkey foreground=" + GetForegroundWindow());
         WaitForKeysUp();
+        Log("keys up");
         DataObject saved = SnapshotClipboard();
         try
         {
             Clipboard.Clear();
             PressWithControl(VK_C);
             string text = WaitForClipboardText();
+            Log("copied length=" + (text == null ? -1 : text.Length));
             if (string.IsNullOrEmpty(text)) return;
 
             string converted = finglish ? Converter.FromFinglish(text) : Converter.SwapLayout(text);
             Clipboard.SetDataObject(converted, true, 5, 100);
             PressWithControl(VK_V);
+            Log("pasted length=" + converted.Length);
             // The target app reads the clipboard asynchronously after the paste keystroke.
             Thread.Sleep(500);
         }
-        catch (ExternalException) { }
+        catch (ExternalException e) { Log("error " + e.Message); }
         finally
         {
             try { Clipboard.SetDataObject(saved, true, 5, 100); }
@@ -416,6 +435,13 @@ class Overlay : Form
             NativeMessage pending;
             while (PeekMessage(out pending, Handle, WM_HOTKEY, WM_HOTKEY, 1)) { }
         }
+    }
+
+    // Records only the steps and text lengths, never the text itself.
+    static void Log(string message)
+    {
+        try { File.AppendAllText(Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "log.txt"), DateTime.Now.ToString("HH:mm:ss.fff ") + message + Environment.NewLine); }
+        catch (IOException) { }
     }
 
     static void WaitForKeysUp()
@@ -497,9 +523,107 @@ class Overlay : Form
         {
             UpdateLanguage();
             SetWindowPos(Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            SetWindowPos(caretLabel.Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         }
         TrackCursor();
-        if (tick % 30 == 0) UpdateColors();
+        TrackCaret();
+        if (tick % 30 == 0)
+        {
+            UpdateColors();
+            if (caretShown) UpdateCaretColors(false);
+        }
+    }
+
+    void TrackCaret()
+    {
+        object box = caretRect;
+        if (box == null)
+        {
+            if (caretShown)
+            {
+                caretShown = false;
+                Push(caretLabel.Handle, caretDc, caretPlaced, 0);
+            }
+            return;
+        }
+
+        // Above the caret, so the label does not cover the text being typed.
+        Rectangle caret = (Rectangle)box;
+        Rectangle area = Screen.FromPoint(caret.Location).Bounds;
+        int x = caret.Right + (int)(2 * scale);
+        int y = caret.Top - labelSize.Height - (int)(1 * scale);
+        if (y < area.Top) y = caret.Bottom + (int)(1 * scale);
+        if (x + labelSize.Width > area.Right) x = caret.Left - labelSize.Width - (int)(2 * scale);
+        Point at = new Point(x, y);
+        if (caretShown && at == caretPlaced) return;
+
+        caretPlaced = at;
+        if (!caretShown)
+        {
+            // The hidden label is fully transparent, so the spot it will cover can be sampled directly.
+            caretShown = true;
+            UpdateCaretColors(true);
+        }
+        Push(caretLabel.Handle, caretDc, caretPlaced, 255);
+    }
+
+    void UpdateCaretColors(bool atLabel)
+    {
+        Point spot = atLabel ? caretPlaced : new Point(caretPlaced.X, caretPlaced.Y - labelSize.Height - 1);
+        Color sample = SampleBackground(spot);
+        int distance = Math.Abs(sample.R - caretChip.R) + Math.Abs(sample.G - caretChip.G) + Math.Abs(sample.B - caretChip.B);
+        if (!atLabel && distance < RecolorDistance) return;
+        caretChip = sample;
+        caretFill = ContrastFor(caretChip);
+        Render();
+        PlaceLabel();
+        if (caretShown) Push(caretLabel.Handle, caretDc, caretPlaced, 255);
+    }
+
+    // Caret lookups are cross-process calls that can stall on a busy app, so they run off the UI thread.
+    void WatchCaret()
+    {
+        while (true)
+        {
+            object found = null;
+            try { found = ReadCaret(); }
+            catch (Exception) { }
+            caretRect = found;
+            Thread.Sleep(50);
+        }
+    }
+
+    // Classic apps report a system caret; browsers and Electron apps report it through accessibility.
+    static object ReadCaret()
+    {
+        IntPtr foreground = GetForegroundWindow();
+        if (foreground == IntPtr.Zero) return null;
+        uint pid;
+        GetWindowThreadProcessId(foreground, out pid);
+        if (pid == OwnProcessId) return null;
+
+        GUITHREADINFO info = new GUITHREADINFO();
+        info.cbSize = Marshal.SizeOf(typeof(GUITHREADINFO));
+        if (!GetGUIThreadInfo(0, ref info)) return null;
+        if (info.hwndCaret != IntPtr.Zero && info.rcCaret.Bottom > info.rcCaret.Top)
+        {
+            POINT p = new POINT { X = info.rcCaret.Left, Y = info.rcCaret.Top };
+            ClientToScreen(info.hwndCaret, ref p);
+            return new Rectangle(p.X, p.Y, Math.Max(1, info.rcCaret.Right - info.rcCaret.Left), info.rcCaret.Bottom - info.rcCaret.Top);
+        }
+
+        IntPtr hwnd = info.hwndFocus != IntPtr.Zero ? info.hwndFocus : foreground;
+        Guid iid = IID_IAccessible;
+        object found;
+        if (AccessibleObjectFromWindow(hwnd, OBJID_CARET, ref iid, out found) != 0 || found == null) return null;
+        try
+        {
+            int left, top, width, height;
+            ((Accessibility.IAccessible)found).accLocation(out left, out top, out width, out height, 0);
+            if (height <= 0 || (left == 0 && top == 0)) return null;
+            return new Rectangle(left, top, Math.Max(1, width), height);
+        }
+        finally { Marshal.ReleaseComObject(found); }
     }
 
     void TrackCursor()
@@ -538,6 +662,7 @@ class Overlay : Form
         Render();
         UpdateTrayIcon();
         PlaceLabel();
+        if (caretShown) Push(caretLabel.Handle, caretDc, caretPlaced, 255);
     }
 
     // The focused control's thread is used so that UWP apps report their real layout.
@@ -620,31 +745,65 @@ class Overlay : Form
             using (Matrix shift = new Matrix(1, 0, 0, 1, pad - bounds.X, pad - bounds.Y)) path.Transform(shift);
             labelSize = new Size((int)Math.Ceiling(bounds.Width) + pad * 2, (int)Math.Ceiling(bounds.Height) + pad * 2);
 
-            using (Bitmap bmp = new Bitmap(labelSize.Width, labelSize.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb))
-            using (Graphics g = Graphics.FromImage(bmp))
-            using (SolidBrush back = new SolidBrush(chip))
-            using (SolidBrush brush = new SolidBrush(fill))
-            {
-                // An opaque chip keeps the letter readable over text in any color.
-                g.SmoothingMode = SmoothingMode.AntiAlias;
-                g.FillRectangle(back, 0, 0, labelSize.Width, labelSize.Height);
-                g.FillPath(brush, path);
+            PaintLabel(path, memDc, ref hBitmap, chip, fill);
+            PaintLabel(path, caretDc, ref caretBitmap, caretChip, caretFill);
+        }
+    }
 
-                IntPtr fresh = bmp.GetHbitmap(Color.FromArgb(0));
-                IntPtr previous = SelectObject(memDc, fresh);
-                if (hBitmap == IntPtr.Zero) oldBitmap = previous; else DeleteObject(hBitmap);
-                hBitmap = fresh;
-            }
+    void PaintLabel(GraphicsPath path, IntPtr dc, ref IntPtr bitmap, Color back, Color fore)
+    {
+        using (Bitmap bmp = new Bitmap(labelSize.Width, labelSize.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb))
+        using (Graphics g = Graphics.FromImage(bmp))
+        using (SolidBrush backBrush = new SolidBrush(back))
+        using (SolidBrush foreBrush = new SolidBrush(fore))
+        {
+            // An opaque chip keeps the letter readable over text in any color.
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.FillRectangle(backBrush, 0, 0, labelSize.Width, labelSize.Height);
+            g.FillPath(foreBrush, path);
+
+            IntPtr fresh = bmp.GetHbitmap(Color.FromArgb(0));
+            SelectObject(dc, fresh);
+            if (bitmap != IntPtr.Zero) DeleteObject(bitmap);
+            bitmap = fresh;
         }
     }
 
     void PlaceLabel()
     {
-        POINT dst = new POINT { X = placed.X, Y = placed.Y };
+        Push(Handle, memDc, placed, 255);
+    }
+
+    void Push(IntPtr hwnd, IntPtr dc, Point at, byte alpha)
+    {
+        POINT dst = new POINT { X = at.X, Y = at.Y };
         POINT src = new POINT();
         SIZE size = new SIZE { cx = labelSize.Width, cy = labelSize.Height };
-        BLENDFUNCTION blend = new BLENDFUNCTION { BlendOp = 0, SourceConstantAlpha = 255, AlphaFormat = 1 };
-        UpdateLayeredWindow(Handle, IntPtr.Zero, ref dst, ref size, memDc, ref src, 0, ref blend, 2);
+        BLENDFUNCTION blend = new BLENDFUNCTION { BlendOp = 0, SourceConstantAlpha = alpha, AlphaFormat = 1 };
+        UpdateLayeredWindow(hwnd, IntPtr.Zero, ref dst, ref size, dc, ref src, 0, ref blend, 2);
+    }
+
+    // The caret label's own click-through window; Overlay draws into it.
+    class CaretLabel : Form
+    {
+        public CaretLabel()
+        {
+            FormBorderStyle = FormBorderStyle.None;
+            ShowInTaskbar = false;
+            StartPosition = FormStartPosition.Manual;
+        }
+
+        protected override bool ShowWithoutActivation { get { return true; } }
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                cp.ExStyle |= WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST;
+                return cp;
+            }
+        }
     }
 
     Point LabelOrigin()
@@ -698,6 +857,8 @@ class Overlay : Form
     const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOACTIVATE = 0x10;
     const int SRCCOPY = 0xCC0020;
     static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+    const uint OBJID_CARET = 0xFFFFFFF8;
+    static readonly Guid IID_IAccessible = new Guid("618736E0-3C3D-11CF-810C-00AA00389B71");
 
     [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] struct NativeMessage { public IntPtr hwnd; public uint message; public IntPtr wParam, lParam; public uint time; public POINT pt; }
@@ -723,6 +884,8 @@ class Overlay : Form
     [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
     [DllImport("user32.dll")] static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
     [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT p);
+    [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr hwnd, ref POINT p);
+    [DllImport("oleacc.dll")] static extern int AccessibleObjectFromWindow(IntPtr hwnd, uint id, ref Guid iid, [MarshalAs(UnmanagedType.Interface)] out object accessible);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
     [DllImport("user32.dll")] static extern IntPtr GetKeyboardLayout(uint thread);
